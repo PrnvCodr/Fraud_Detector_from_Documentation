@@ -1,4 +1,4 @@
-# 🔍 DocFraudDetector — AI-Powered Document Fraud & Tamper Detection
+#  DocFraudDetector — AI-Powered Document Fraud & Tamper Detection
 
 <div align="center">
 
@@ -16,17 +16,17 @@
 
 ---
 
-## 🎯 Features
+##  Features
 
 | Stage | Technique | Description |
 |-------|-----------|-------------|
-| 📄 **Document Detection** | YOLOv8 + OpenCV Contours | Localize documents in arbitrary backgrounds with robust fallback |
-| 📐 **Perspective Rectification** | OpenCV `warpPerspective` | Correct rotation, tilt, and perspective distortion |
-| 🔬 **Tamper Detection** | EfficientNet-B0 + ELA + Noise Analysis | Multi-technique fraud detection with weighted scoring |
-| 🔤 **OCR Extraction** | EasyOCR + Regex Field Parsing | Extract and structure text (Name, DOB, ID Number, etc.) |
-| 🧪 **Synthetic Data** | Custom Generator (5 tamper types) | Generate training data with realistic tampering patterns |
-| 🌐 **REST API** | FastAPI + Swagger | Production-ready API endpoint for document analysis |
-| 💻 **Web Demo** | Streamlit | Interactive step-by-step visualization dashboard |
+|  **Document Detection** | YOLOv8 + OpenCV Contours | Localize documents in arbitrary backgrounds with robust fallback |
+|  **Perspective Rectification** | OpenCV `warpPerspective` | Correct rotation, tilt, and perspective distortion |
+|  **Tamper Detection** | EfficientNet-B0 + ELA + Noise Analysis | Multi-technique fraud detection with weighted scoring |
+|  **OCR Extraction** | EasyOCR + Regex Field Parsing | Extract and structure text (Name, DOB, ID Number, etc.) |
+|  **Synthetic Data** | Custom Generator (5 tamper types) | Generate training data with realistic tampering patterns |
+|  **REST API** | FastAPI + Swagger | Production-ready API endpoint for document analysis |
+|  **Web Demo** | Streamlit | Interactive step-by-step visualization dashboard |
 
 ### Tamper Detection Techniques
 
@@ -47,7 +47,7 @@
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 Input Image
@@ -99,7 +99,7 @@ Input Image
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### 1. Installation
 
@@ -148,7 +148,7 @@ python api/server.py
 
 ---
 
-## 🌐 API
+##  API
 
 ### `POST /analyze`
 
@@ -193,7 +193,7 @@ curl http://localhost:8000/health
 
 ---
 
-## 🧠 Training
+##  Training
 
 ### Generate Synthetic Training Data
 
@@ -220,7 +220,7 @@ Training produces:
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 DocFraudDetector/
@@ -270,19 +270,19 @@ DocFraudDetector/
 
 ---
 
-## 📊 Resume Bullet Point
+##  Resume Bullet Point
 
 > Built an end-to-end document fraud detection system using YOLOv8 + EfficientNet-B0 + EasyOCR; implemented Error Level Analysis, noise consistency, and edge density forensics for multi-technique tamper scoring; generated 1000+ synthetic tampered documents with 5 tamper types; deployed as FastAPI REST API + Streamlit demo
 
 ---
 
-## 👤 Author
+##  Author
 
 **Pranav Kashyap**  
 IIIT Dharwad  
 
 ---
 
-## 📄 License
+##  License
 
 MIT License — see [LICENSE](LICENSE) for details.
