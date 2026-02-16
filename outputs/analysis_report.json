@@ -1,0 +1,73 @@
+{
+  "timestamp": "2026-02-16T14:51:15.393628",
+  "image_path": "data/sample_images/tampered/sample_tampered_0.png",
+  "image_size": {
+    "width": 600,
+    "height": 400
+  },
+  "stages": {
+    "detection": {
+      "bbox": [
+        0,
+        5,
+        599,
+        361
+      ],
+      "corners": [
+        [
+          5.0,
+          6.0
+        ],
+        [
+          594.0,
+          5.0
+        ],
+        [
+          599.0,
+          361.0
+        ],
+        [
+          0.0,
+          361.0
+        ]
+      ],
+      "confidence": 0.8799,
+      "method": "contour",
+      "time_ms": 12.2
+    },
+    "rectification": {
+      "output_size": {
+        "width": 600,
+        "height": 400
+      },
+      "method": "auto_detected",
+      "time_ms": 266.3
+    },
+    "tamper_detection": {
+      "is_tampered": true,
+      "tamper_probability": 0.655,
+      "analysis_scores": {
+        "ela": 0.8654664002813742,
+        "noise": 0.636583766276935,
+        "edge": 0.34420577429058186
+      },
+      "time_ms": 28.0
+    },
+    "ocr": {
+      "raw_text": "",
+      "structured_fields": {},
+      "word_count": 0,
+      "confidence_avg": 0.0,
+      "num_detections": 0,
+      "time_ms": 1877.0
+    }
+  },
+  "summary": {
+    "total_time_ms": 2216.9,
+    "is_tampered": true,
+    "tamper_probability": 0.655,
+    "text_extracted": false,
+    "document_detected": true,
+    "verdict": "⚠️ TAMPERED"
+  }
+}

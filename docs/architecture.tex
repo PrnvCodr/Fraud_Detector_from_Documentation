@@ -1,0 +1,261 @@
+% =============================================================================
+% Chapter 2: Architecture — The "How"
+% =============================================================================
+
+\chapter{System Architecture}
+\label{ch:architecture}
+
+\section{High-Level Data Flow}
+
+The system follows a \textbf{sequential pipeline architecture} where the output of each stage feeds into the next. The pipeline orchestrator (\texttt{pipeline.py}) manages the flow, handles errors, and collects timing metrics.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.8cm,
+    block/.style={rectangle, draw=codeblue, fill=codeblue!8, text width=12cm, minimum height=1.2cm, align=center, rounded corners=3pt, font=\small},
+    arrow/.style={->, thick, color=codeblue!70!black},
+    label/.style={font=\footnotesize\color{codegray}, align=left},
+]
+    % Nodes
+    \node[block] (input) {\textbf{Input Image} (photograph of document, any angle/background)};
+    \node[block, below of=input] (detect) {\textbf{Stage 1: Document Detection} — \texttt{detector.py}\\YOLOv8-nano or OpenCV Contour Fallback};
+    \node[block, below of=detect] (rect) {\textbf{Stage 2: Perspective Rectification} — \texttt{rectifier.py}\\\texttt{getPerspectiveTransform} + \texttt{warpPerspective} + CLAHE Enhancement};
+    \node[block, below of=rect] (tamper) {\textbf{Stage 3: Tamper Detection} — \texttt{tamper\_detector.py}\\ELA (w=0.40) + Noise (w=0.35) + Edge (w=0.25) + CNN (w=0.50 if trained)};
+    \node[block, below of=tamper] (ocr) {\textbf{Stage 4: OCR Extraction} — \texttt{ocr\_engine.py}\\EasyOCR + Preprocessing + Regex Field Parsing};
+    \node[block, below of=ocr, fill=codegreen!8, draw=codegreen] (output) {\textbf{Output}: JSON Report + Visualisation Images + Verdict};
+
+    % Arrows
+    \draw[arrow] (input) -- (detect) node[midway, right, label] {raw image array};
+    \draw[arrow] (detect) -- (rect) node[midway, right, label] {cropped ROI + corners};
+    \draw[arrow] (rect) -- (tamper) node[midway, right, label] {rectified + enhanced image};
+    \draw[arrow] (tamper) -- (ocr) node[midway, right, label] {tamper verdict + heatmap};
+    \draw[arrow] (ocr) -- (output) node[midway, right, label] {text + structured fields};
+\end{tikzpicture}
+\caption{End-to-end data flow through the DocFraudDetector pipeline.}
+\label{fig:dataflow}
+\end{figure}
+
+
+\section{Stage 1: Document Detection}
+
+\subsection{Purpose}
+Given a photograph that may contain a document against a cluttered background (desk, hand, other objects), \textbf{locate the document region} and extract its four corner coordinates.
+
+\subsection{Primary Method — YOLOv8}
+\begin{itemize}[leftmargin=2em]
+    \item Model: \texttt{yolov8n.pt} (nano — 3.2M parameters, optimised for speed).
+    \item Confidence threshold: $0.25$ (configurable in \texttt{config.py}).
+    \item IoU threshold: $0.45$ for non-maximum suppression.
+    \item If a ``document''-class detection is found, the bounding box coordinates are converted to ordered corners (top-left, top-right, bottom-right, bottom-left).
+\end{itemize}
+
+\subsection{Fallback Method — OpenCV Contours}
+If YOLOv8 is unavailable or fails to find a document, the system falls back to a classical CV pipeline:
+
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Grayscale} conversion.
+    \item \textbf{Gaussian blur} with kernel $(5 \times 5)$ to reduce noise.
+    \item \textbf{Canny edge detection} with thresholds $(50, 150)$.
+    \item \textbf{Contour finding} using \texttt{cv2.findContours}.
+    \item \textbf{Polygon approximation} with \texttt{cv2.approxPolyDP} ($\epsilon = 0.02 \times \text{perimeter}$).
+    \item If a 4-sided polygon is found, its corners are ordered clockwise.
+    \item If no quadrilateral is found, the \textbf{full image boundaries} are used as a fallback.
+\end{enumerate}
+
+\begin{technote}
+The corner ordering algorithm computes the sum ($x + y$) and difference ($y - x$) of each coordinate to determine the top-left, top-right, bottom-right, and bottom-left corners respectively. This is a classic trick from the OpenCV documentation.
+\end{technote}
+
+\subsection{Output}
+A dictionary containing: bounding box (\texttt{bbox}), ordered corners (\texttt{corners}), detection confidence, method used (\texttt{yolo} or \texttt{contour}), and the cropped document image.
+
+
+\section{Stage 2: Perspective Rectification}
+
+\subsection{Purpose}
+Transform the cropped document so that it appears as a flat, front-facing rectangle — correcting for tilt, rotation, and perspective distortion.
+
+\subsection{Algorithm}
+
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Input}: cropped image + four corner coordinates.
+    \item \textbf{Destination points}: a rectangle of dimensions $W \times H$ (default $600 \times 400$).
+    \item \textbf{Perspective matrix}: $M = \texttt{cv2.getPerspectiveTransform}(\text{src\_corners}, \text{dst\_corners})$
+    \item \textbf{Warp}: $\text{rectified} = \texttt{cv2.warpPerspective}(\text{image}, M, (W, H))$ with \texttt{INTER\_CUBIC} interpolation.
+    \item \textbf{Enhancement}: Apply CLAHE (Contrast Limited Adaptive Histogram Equalisation) and an unsharp mask for sharpening.
+\end{enumerate}
+
+\subsection{Enhancement Details}
+
+\textbf{CLAHE} improves local contrast in documents with uneven lighting:
+\begin{itemize}[leftmargin=2em]
+    \item Converts to LAB colour space.
+    \item Applies CLAHE with \texttt{clipLimit=2.0} and \texttt{tileGridSize=(8,8)} to the L channel.
+    \item Converts back to BGR.
+\end{itemize}
+
+\textbf{Unsharp mask} (sharpening):
+$$\text{sharp} = \text{image} + \alpha \cdot (\text{image} - \text{blur}(\text{image}))$$
+where $\alpha = 1.5$ and the blur kernel is $(5 \times 5)$.
+
+\subsection{Output}
+The rectified document image and the enhanced version (used for OCR).
+
+
+\section{Stage 3: Tamper Detection}
+
+\subsection{Purpose}
+Determine whether the document has been digitally altered, and provide a \textbf{tamper probability score} between 0 (definitely genuine) and 1 (definitely tampered).
+
+\subsection{Multi-Technique Approach}
+
+The system uses \textbf{up to four independent techniques}, each producing a score in $[0, 1]$:
+
+\subsubsection{Technique 1: Error Level Analysis (ELA)}
+
+ELA exploits the fact that JPEG compression affects all regions of an image uniformly — \textit{unless} a region has been pasted in or re-saved at a different quality level.
+
+\textbf{Algorithm}:
+\begin{enumerate}[label=\arabic*.]
+    \item Re-compress the image as JPEG at quality $Q = 90$.
+    \item Compute the pixel-wise absolute difference: $\text{ELA} = |\text{original} - \text{recompressed}| \times \text{scale}$
+    \item The scale factor (10) amplifies the differences for visibility.
+    \item Compute the mean intensity of the ELA image, normalised to $[0, 1]$.
+    \item Regions with significantly \textbf{higher ELA values} suggest tampering.
+\end{enumerate}
+
+\textbf{Weight}: 0.40.
+
+\subsubsection{Technique 2: Noise Consistency Analysis}
+
+A genuine photograph has a uniform noise pattern across its surface. Tampered regions often have different noise levels because they were captured or processed under different conditions.
+
+\textbf{Algorithm}:
+\begin{enumerate}[label=\arabic*.]
+    \item Split the image into $16 \times 16$ blocks.
+    \item Compute the standard deviation of pixel intensities in each block.
+    \item Calculate the \textbf{coefficient of variation} (CV) across all blocks: $\text{CV} = \sigma_{\text{blocks}} / \mu_{\text{blocks}}$
+    \item High CV $\Rightarrow$ inconsistent noise $\Rightarrow$ likely tampered.
+\end{enumerate}
+
+\textbf{Weight}: 0.35.
+
+\subsubsection{Technique 3: Edge Density Analysis}
+
+Copy-paste operations introduce unnatural sharp edges at the boundary of the pasted region. This technique measures overall edge density.
+
+\textbf{Algorithm}:
+\begin{enumerate}[label=\arabic*.]
+    \item Apply Canny edge detection.
+    \item Compute the ratio of edge pixels to total pixels.
+    \item Normalise by a reference density value.
+    \item Unusually high edge density suggests splicing.
+\end{enumerate}
+
+\textbf{Weight}: 0.25.
+
+\subsubsection{Technique 4: CNN Classifier (Optional)}
+
+An EfficientNet-B0 model trained on synthetic genuine vs.\ tampered image pairs.
+
+\begin{itemize}[leftmargin=2em]
+    \item Input size: $224 \times 224$ RGB, normalised with ImageNet statistics.
+    \item Output: softmax probability for class ``tampered''.
+    \item \textbf{Weight}: 0.50 (when available; forensic weights are halved to accommodate).
+    \item Uses \texttt{timm} for model creation with pre-trained ImageNet weights.
+\end{itemize}
+
+\subsection{Score Fusion}
+
+The final tamper probability is a weighted average:
+
+$$P_{\text{tamper}} = \frac{\sum_{i} w_i \cdot s_i}{\sum_{i} w_i}$$
+
+where $s_i$ is the score from technique $i$ and $w_i$ is its weight. If $P_{\text{tamper}} > 0.50$ (configurable threshold), the verdict is ``TAMPERED.''
+
+\begin{keyinsight}
+Using multiple independent techniques is the key strength of this system. An attacker who fools ELA (by matching compression levels) will still be caught by noise analysis. An attacker who matches noise will still trigger edge density anomalies. The CNN adds a learned, data-driven check on top.
+\end{keyinsight}
+
+
+\section{Stage 4: OCR Extraction}
+
+\subsection{Purpose}
+Extract all visible text from the rectified document and parse it into structured fields (name, date of birth, ID number, address, gender).
+
+\subsection{Preprocessing Pipeline}
+Before running OCR, the image undergoes:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Denoising}: \texttt{cv2.fastNlMeansDenoisingColored} to reduce noise.
+    \item \textbf{Grayscale} conversion.
+    \item \textbf{CLAHE} for contrast enhancement.
+    \item \textbf{Adaptive thresholding} (\texttt{ADAPTIVE\_THRESH\_GAUSSIAN\_C}) for binarisation.
+\end{enumerate}
+
+\subsection{OCR Engine}
+EasyOCR is used with English language support. Each detection returns:
+\begin{itemize}[leftmargin=2em]
+    \item Bounding box coordinates.
+    \item Extracted text string.
+    \item Confidence score.
+\end{itemize}
+
+\subsection{Field Extraction}
+Regex patterns (defined in \texttt{config.py}) parse the raw text:
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{@{} l l @{}}
+        \toprule
+        \textbf{Field} & \textbf{Regex Pattern} \\
+        \midrule
+        Name      & \texttt{(?:name|naam)\textbackslash s*[:--]?\textbackslash s*([A-Za-z\textbackslash s.]+)} \\
+        DOB       & \texttt{(?:dob|date\textbackslash s*of\textbackslash s*birth)\textbackslash s*[:--]?\textbackslash s*([\textbackslash d]\{2\}[/--][\textbackslash d]\{2\}[/--][\textbackslash d]\{4\})} \\
+        ID Number & \texttt{(?:no|number|id)\textbackslash s*[:--]?\textbackslash s*([\textbackslash dA-Z]\{4,\})} \\
+        Gender    & \texttt{(?:gender|sex)\textbackslash s*[:--]?\textbackslash s*(male|female|m|f)} \\
+        \bottomrule
+    \end{tabular}
+    \caption{Regex patterns used for structured field extraction.}
+    \label{tab:regex}
+\end{table}
+
+
+\section{Deployment Architecture}
+
+\subsection{FastAPI REST API}
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Endpoint}: \texttt{POST /analyze} — accepts multipart image upload.
+    \item \textbf{Response}: JSON containing verdict, stage-by-stage metrics, and optional base64-encoded visualisation images.
+    \item \textbf{Health check}: \texttt{GET /health} — returns device info and status.
+    \item \textbf{Swagger UI}: Auto-generated at \texttt{/docs}.
+    \item CORS enabled for all origins (development mode).
+    \item Max file size: 10~MB.
+\end{itemize}
+
+\subsection{Streamlit Web Demo}
+
+\begin{itemize}[leftmargin=2em]
+    \item Interactive file upload or sample image selection.
+    \item Progress bar during analysis.
+    \item \textbf{Verdict banner}: Green (``GENUINE'') or red (``TAMPERED'').
+    \item Stage-by-stage expandable sections showing:
+    \begin{itemize}
+        \item Detection bounding box overlay.
+        \item Rectified and enhanced document images.
+        \item ELA heatmap and tamper likelihood heatmap.
+        \item OCR text and structured fields.
+    \end{itemize}
+    \item JSON report download button.
+    \item Pipeline is cached using \texttt{@st.cache\_resource} for fast reloads.
+\end{itemize}
+
+\subsection{CLI Mode}
+
+\begin{lstlisting}[style=bash]
+python src/pipeline.py <image_path>
+\end{lstlisting}
+
+Processes the image and saves results (8 visualisation images + JSON report) to the \texttt{outputs/} directory.

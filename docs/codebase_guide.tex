@@ -1,0 +1,315 @@
+% =============================================================================
+% Chapter 3: Codebase Guide — File-by-File Breakdown
+% =============================================================================
+
+\chapter{Codebase Guide}
+\label{ch:codebase}
+
+This chapter walks through every significant file in the project, explaining its purpose, key classes/functions, and how it connects to the rest of the system.
+
+\section{Project Directory Structure}
+
+\begin{lstlisting}[basicstyle=\ttfamily\small, frame=none, numbers=none]
+DocFraudDetector/
+|-- config.py                   # Central configuration
+|-- requirements.txt            # Dependencies
+|-- README.md                   # Project documentation
+|
+|-- src/                        # Core pipeline modules
+|   |-- __init__.py             # Package init
+|   |-- utils.py                # Image utilities
+|   |-- detector.py             # Document detection
+|   |-- rectifier.py            # Perspective correction
+|   |-- tamper_detector.py      # Tamper analysis
+|   |-- ocr_engine.py           # OCR extraction
+|   |-- pipeline.py             # End-to-end orchestrator
+|
+|-- data/
+|   |-- synthetic_generator.py  # Synthetic data generator
+|   |-- sample_images/          # Test images
+|
+|-- training/
+|   |-- train_tamper.py         # Model training script
+|
+|-- api/
+|   |-- server.py               # FastAPI REST API
+|
+|-- demo/
+|   |-- app.py                  # Streamlit web demo
+|
+|-- models/                     # Saved model checkpoints
+|-- outputs/                    # Analysis results
+|-- docs/                       # This documentation
+\end{lstlisting}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{config.py} — Central Configuration}
+
+\textbf{Purpose}: Single source of truth for every tuneable parameter in the project. No magic numbers exist anywhere else.
+
+\textbf{Key sections}:
+
+\begin{longtable}{@{} p{4cm} p{3cm} p{7cm} @{}}
+    \toprule
+    \textbf{Setting} & \textbf{Default} & \textbf{What it controls} \\
+    \midrule
+    \endhead
+    \texttt{DEVICE}           & \texttt{"cpu"}   & Auto-selects \texttt{cuda} if GPU available \\
+    \texttt{YOLO\_MODEL}      & \texttt{yolov8n.pt} & Which YOLO variant to load \\
+    \texttt{YOLO\_CONF\_THRESHOLD} & 0.25 & Minimum confidence for YOLO detections \\
+    \texttt{CANNY\_LOW/HIGH}  & 50 / 150 & Canny edge detection thresholds \\
+    \texttt{CONTOUR\_APPROX\_EPSILON} & 0.02 & Controls polygon approximation strictness \\
+    \texttt{RECTIFIED\_WIDTH/HEIGHT} & 600 / 400 & Output dimensions after rectification \\
+    \texttt{TAMPER\_MODEL\_NAME} & \texttt{efficientnet\_b0} & CNN model architecture \\
+    \texttt{TAMPER\_THRESHOLD} & 0.50 & Probability above this = ``tampered'' \\
+    \texttt{ELA\_QUALITY}     & 90 & JPEG quality for ELA recompression \\
+    \texttt{ELA\_SCALE}       & 10 & Amplification factor for ELA differences \\
+    \texttt{OCR\_LANGUAGES}   & \texttt{["en"]} & EasyOCR language list \\
+    \texttt{FIELD\_PATTERNS}  & (5 regexes) & Regex patterns for field extraction \\
+    \texttt{TAMPER\_TYPES}    & (5 types) & Weighted probabilities for synthetic tampers \\
+    \texttt{TRAIN\_EPOCHS}    & 20 & Training epochs for the CNN \\
+    \texttt{TRAIN\_LR}        & $1 \times 10^{-4}$ & AdamW learning rate \\
+    \texttt{TRAIN\_BATCH\_SIZE} & 16 & Batch size for training \\
+    \texttt{API\_PORT}        & 8000 & FastAPI server port \\
+    \bottomrule
+\end{longtable}
+
+\begin{technote}
+All paths (\texttt{DATA\_DIR}, \texttt{MODEL\_DIR}, \texttt{OUTPUT\_DIR}, etc.) are derived from \texttt{PROJECT\_ROOT}, which is computed dynamically using \texttt{os.path.dirname(os.path.abspath(\_\_file\_\_))}. This makes the project portable across machines.
+\end{technote}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/utils.py} — Image Utilities}
+
+\textbf{Purpose}: Shared helper functions used by all modules.
+
+\textbf{Key functions}:
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{load\_image(path)} — Loads an image via \texttt{cv2.imread}. Returns \texttt{None} if file is missing.
+    \item \texttt{bgr\_to\_rgb(image)} / \texttt{rgb\_to\_bgr(image)} — Colour space conversion (OpenCV uses BGR; display libraries use RGB).
+    \item \texttt{resize\_image(image, max\_dim)} — Proportionally resizes an image so its longest side does not exceed \texttt{max\_dim}.
+    \item \texttt{draw\_bounding\_box(image, bbox, label, color)} — Draws a labelled rectangle on an image.
+    \item \texttt{draw\_corners(image, corners)} — Draws coloured circles at detected document corners.
+    \item \texttt{draw\_ocr\_results(image, detections)} — Overlays OCR bounding boxes and text on the image.
+    \item \texttt{compute\_ela(image, quality, scale)} — Performs Error Level Analysis.
+    \item \texttt{compute\_noise\_map(image, block\_size)} — Computes per-block noise standard deviation map.
+    \item \texttt{create\_analysis\_grid(images\_dict)} — Stitches multiple images (original, detection, ELA, heatmap, etc.) into a single grid for easy comparison.
+    \item \texttt{save\_image(image, path)} — Saves an image, creating parent directories if needed.
+\end{itemize}
+
+\textbf{Connection}: Every other module imports from \texttt{utils.py}. It is the most depended-upon file.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/detector.py} — Document Detection}
+
+\textbf{Purpose}: Locate the document in an input image.
+
+\textbf{Class}: \texttt{DocumentDetector}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{\_\_init\_\_(use\_yolo=True)} — Tries to load YOLOv8 model. Sets \texttt{self.use\_yolo = False} if it fails, enabling graceful fallback.
+    \item \texttt{detect(image)} — Main entry point. Tries YOLO first; falls back to contour detection.
+    \item \texttt{\_detect\_yolo(image)} — Runs YOLOv8 inference, extracts the highest-confidence document detection, converts bbox to ordered corners.
+    \item \texttt{\_detect\_contour(image)} — Classical pipeline: grayscale $\to$ blur $\to$ Canny $\to$ contours $\to$ polygon approximation.
+    \item \texttt{\_order\_corners(pts)} — Orders 4 points as [TL, TR, BR, BL] using sum/difference of coordinates.
+\end{itemize}
+
+\textbf{Connects to}: called by \texttt{pipeline.py} as Stage 1. Uses \texttt{config.py} for thresholds.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/rectifier.py} — Perspective Rectification}
+
+\textbf{Purpose}: Correct perspective distortion after detection.
+
+\textbf{Class}: \texttt{DocumentRectifier}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{\_\_init\_\_(width, height)} — Sets target output dimensions.
+    \item \texttt{rectify(image, corners=None)} — Computes the perspective transform and warps the image. If corners are not provided, it auto-detects them using the same contour logic as \texttt{detector.py}.
+    \item \texttt{\_auto\_detect\_corners(image)} — Fallback corner detection.
+    \item \texttt{\_calculate\_dimensions(corners)} — Computes optimal output width and height from the input quadrilateral, preserving aspect ratio.
+    \item \texttt{enhance\_rectified(image)} — Applies CLAHE + unsharp mask sharpening to the rectified output.
+\end{itemize}
+
+\textbf{Connects to}: receives cropped image and corners from \texttt{detector.py} via \texttt{pipeline.py}. Passes rectified output to \texttt{tamper\_detector.py} and enhanced output to \texttt{ocr\_engine.py}.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/tamper\_detector.py} — Tamper Detection}
+
+\textbf{Purpose}: Forensic analysis to determine if the document has been digitally altered.
+
+\textbf{Class}: \texttt{TamperDetector}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{\_\_init\_\_()} — Loads the CNN model checkpoint if available. If not, sets \texttt{self.use\_cnn = False}.
+    \item \texttt{detect(image)} — Orchestrates all forensic techniques and fuses their scores.
+    \item \texttt{\_cnn\_predict(image)} — Preprocesses image to $224 \times 224$, normalises with ImageNet stats, runs inference through EfficientNet-B0, returns softmax probability of ``tampered'' class.
+    \item \texttt{\_ela\_analysis(image)} — Calls \texttt{utils.compute\_ela()}, computes mean ELA intensity as tamper score.
+    \item \texttt{\_noise\_analysis(image)} — Calls \texttt{utils.compute\_noise\_map()}, computes coefficient of variation across blocks.
+    \item \texttt{\_edge\_analysis(image)} — Runs Canny, calculates edge pixel ratio.
+    \item \texttt{\_create\_heatmap(image, ela\_img, noise\_map)} — Combines ELA and noise maps into a colour-coded heatmap overlaid on the original.
+\end{itemize}
+
+\textbf{Score fusion}: weighted average with configurable weights. If CNN is available, it gets weight 0.50 and forensic weights are halved.
+
+\textbf{Connects to}: receives rectified image from \texttt{rectifier.py}. Output (verdict + heatmap) is included in the final report.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/ocr\_engine.py} — OCR Extraction}
+
+\textbf{Purpose}: Extract and structure text from the document.
+
+\textbf{Class}: \texttt{OCREngine}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{\_\_init\_\_(languages)} — Initialises EasyOCR \texttt{Reader} with specified languages.
+    \item \texttt{extract(image)} — Main entry point. Preprocesses image, runs OCR, extracts structured fields.
+    \item \texttt{\_preprocess(image)} — Denoising $\to$ grayscale $\to$ CLAHE $\to$ adaptive threshold.
+    \item \texttt{\_extract\_fields(raw\_text, lines)} — Applies regex patterns from \texttt{config.FIELD\_PATTERNS} to parse fields. Includes fallback heuristics for common ID formats.
+    \item \texttt{extract\_from\_region(image, bbox)} — Extracts text from a specific rectangular region only.
+\end{itemize}
+
+\textbf{Connects to}: receives enhanced image from \texttt{rectifier.py}. Output (text + fields) goes into the final report.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{src/pipeline.py} — End-to-End Orchestrator}
+
+\textbf{Purpose}: Chain all modules together and produce the final analysis.
+
+\textbf{Class}: \texttt{DocumentAnalysisPipeline}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{\_\_init\_\_(use\_yolo, verbose)} — Instantiates all four stage modules.
+    \item \texttt{analyze(image\_or\_path, save\_results)} — The main method:
+    \begin{enumerate}[label=\arabic*.]
+        \item Loads image if a path is given.
+        \item Runs detection $\to$ rectification $\to$ tamper detection $\to$ OCR.
+        \item Times each stage with \texttt{time.time()}.
+        \item Collects results into a unified dictionary.
+        \item Generates visualisation images (detection overlay, rectified, ELA, heatmap, OCR, analysis grid).
+        \item Saves JSON report and images to \texttt{outputs/} if \texttt{save\_results=True}.
+    \end{enumerate}
+    \item \texttt{get\_json\_report(result)} — Serialises the result dictionary to a JSON string.
+\end{itemize}
+
+\textbf{Connects to}: imports and orchestrates all four stage modules. Called by \texttt{api/server.py}, \texttt{demo/app.py}, and the CLI.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{data/synthetic\_generator.py} — Synthetic Data}
+
+\textbf{Purpose}: Generate realistic training data for the CNN classifier.
+
+\textbf{Class}: \texttt{SyntheticDocumentGenerator}
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{generate\_dataset(num\_genuine, num\_tampered)} — Generates both genuine and tampered images, saves metadata JSON.
+    \item \texttt{\_create\_document()} — Renders a realistic document with header, photo placeholder, text fields (name, DOB, ID, address), watermarks, signature line, and decorative elements.
+    \item \textbf{5 tamper functions}:
+    \begin{itemize}
+        \item \texttt{\_tamper\_text\_replacement} — Whites out a region and re-types different text.
+        \item \texttt{\_tamper\_font\_mismatch} — Injects text in a script-style font (visually inconsistent).
+        \item \texttt{\_tamper\_copy\_paste} — Clones one region to another location.
+        \item \texttt{\_tamper\_blur\_injection} — Applies strong Gaussian blur to a region.
+        \item \texttt{\_tamper\_noise\_injection} — Adds random Gaussian noise to a region.
+    \end{itemize}
+    \item \texttt{\_apply\_realistic\_augmentation()} — Applies random brightness, rotation, JPEG compression, perspective distortion, and shadow effects.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{training/train\_tamper.py} — Model Training}
+
+\textbf{Purpose}: Train the EfficientNet-B0 binary classifier.
+
+\textbf{Key components}:
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{TamperDataset} — A PyTorch \texttt{Dataset} that reads genuine (label 0) and tampered (label 1) images from the directory structure.
+    \item \texttt{create\_model()} — Uses \texttt{timm.create\_model("efficientnet\_b0", pretrained=True, num\_classes=2)}.
+    \item \texttt{train\_one\_epoch()} — Standard training loop with cross-entropy loss and AdamW optimiser.
+    \item \texttt{validate()} — Computes accuracy, precision, recall, F1, and AUC-ROC on the validation set.
+    \item \textbf{Training features}: Learning rate scheduling (\texttt{ReduceLROnPlateau}), early stopping, best-model checkpointing based on validation F1, and training history saved as JSON.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{api/server.py} — FastAPI REST API}
+
+\textbf{Purpose}: Expose the pipeline as an HTTP service.
+
+\begin{itemize}[leftmargin=2em]
+    \item \texttt{POST /analyze} — Accepts multipart file upload, validates content type and file size, runs pipeline, returns JSON with verdict, metrics, and base64 images.
+    \item \texttt{GET /health} — Returns status, timestamp, device info.
+    \item \texttt{GET /} — API info with endpoint listing.
+    \item Pipeline is lazily initialised on first request.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{\texttt{demo/app.py} — Streamlit Web Demo}
+
+\textbf{Purpose}: Interactive web UI for demonstrating the system.
+
+\begin{itemize}[leftmargin=2em]
+    \item File upload widget for custom images, plus a dropdown for pre-generated samples.
+    \item ``Run Full Analysis'' button triggers the pipeline.
+    \item Results displayed in expandable sections for each stage.
+    \item Verdict banner (green = genuine, red = tampered).
+    \item Metric cards showing tamper probability, word count, detection confidence, and processing time.
+    \item JSON report download button.
+    \item Pipeline cached with \texttt{@st.cache\_resource} for fast subsequent runs.
+\end{itemize}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{File Dependency Graph}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    node distance=1.5cm and 2cm,
+    box/.style={rectangle, draw=codeblue, fill=codeblue!5, text width=3cm, minimum height=0.8cm, align=center, rounded corners=2pt, font=\small},
+    arrow/.style={->, thick, color=codegray},
+]
+    % Core
+    \node[box] (config) {\texttt{config.py}};
+    \node[box, below left=of config, xshift=-1cm] (utils) {\texttt{utils.py}};
+    \node[box, below=of utils] (det) {\texttt{detector.py}};
+    \node[box, right=of det] (rect) {\texttt{rectifier.py}};
+    \node[box, right=of rect] (tamper) {\texttt{tamper\_det.py}};
+    \node[box, below=of rect] (ocr) {\texttt{ocr\_engine.py}};
+    \node[box, below=of ocr, fill=codegreen!10, draw=codegreen] (pipe) {\texttt{pipeline.py}};
+    
+    % Consumers
+    \node[box, below left=of pipe] (api) {\texttt{server.py}};
+    \node[box, below right=of pipe] (demo) {\texttt{app.py}};
+    
+    % Arrows
+    \draw[arrow] (config) -- (utils);
+    \draw[arrow] (config) -- (det);
+    \draw[arrow] (config) -- (rect);
+    \draw[arrow] (config) -- (tamper);
+    \draw[arrow] (config) -- (ocr);
+    \draw[arrow] (utils) -- (det);
+    \draw[arrow] (utils) -- (rect);
+    \draw[arrow] (utils) -- (tamper);
+    \draw[arrow] (utils) -- (ocr);
+    \draw[arrow] (det) -- (pipe);
+    \draw[arrow] (rect) -- (pipe);
+    \draw[arrow] (tamper) -- (pipe);
+    \draw[arrow] (ocr) -- (pipe);
+    \draw[arrow] (pipe) -- (api);
+    \draw[arrow] (pipe) -- (demo);
+\end{tikzpicture}
+\caption{File dependency graph. Arrows indicate ``imports from.''}
+\label{fig:deps}
+\end{figure}

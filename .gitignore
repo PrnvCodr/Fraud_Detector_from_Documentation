@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LaTeX build artifacts
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.synctex.gz
+
+# Model checkpoints (too large for git)
+models/*.pth
+models/*.pt
+models/*.onnx
+
+# Generated data (reproduce via synthetic_generator.py)
+data/synthetic/
+
+# Output results (uncomment to exclude)
+# outputs/
+
+# Misc
+*.bak
+*.tmp

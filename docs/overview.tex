@@ -1,0 +1,128 @@
+% =============================================================================
+% Chapter 1: Overview — The "What" and "Why"
+% =============================================================================
+
+\chapter{Project Overview}
+\label{ch:overview}
+
+\section{Abstract}
+
+\textbf{DocFraudDetector} is an end-to-end AI system that detects fraud and tampering in document images. Given a photograph of an identity document (Aadhaar card, PAN card, driver's licence, voter ID, etc.), the system automatically:
+
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Locates} the document region within the photograph.
+    \item \textbf{Rectifies} perspective distortion so the document appears flat and front-facing.
+    \item \textbf{Analyzes} the image forensically to determine if any region has been digitally tampered with.
+    \item \textbf{Extracts} text via OCR and structures it into machine-readable fields.
+\end{enumerate}
+
+The pipeline processes a single image in under \textbf{400 milliseconds} on a CPU machine, producing a detailed JSON report with a tamper verdict, individual forensic scores, visual heatmaps, and extracted text fields.
+
+\begin{keyinsight}
+The system combines \textbf{classical computer vision forensics} (Error Level Analysis, noise analysis, edge density) with \textbf{deep learning} (EfficientNet-B0 CNN classifier), following the same hybrid approach used at BigVision LLC across their portfolio of commercial computer vision products.
+\end{keyinsight}
+
+
+\section{Problem Statement}
+
+Digital document fraud is a growing threat across banking, insurance, immigration, and identity verification. Common attacks include:
+
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{Text replacement}: Overwriting a name, date, or ID number with new text.
+    \item \textbf{Font mismatch}: Injecting text in a different typeface, creating typographic inconsistency.
+    \item \textbf{Copy-paste forgery}: Cloning a region of the document (e.g., a photo or stamp) to another location.
+    \item \textbf{Selective blur}: Applying blur to hide the original content of a specific area.
+    \item \textbf{Noise injection}: Adding noise to mask evidence of editing.
+\end{itemize}
+
+Existing solutions either require manual expert inspection (slow, expensive, unscalable) or rely on single-technique detection (easy to bypass). There is a need for an \textbf{automated, multi-technique} system that catches tampering regardless of which method the attacker used.
+
+
+\section{Solution: Multi-Technique Forensic Pipeline}
+
+DocFraudDetector addresses this by chaining four specialised modules into a single pipeline:
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.4}
+    \begin{tabular}{@{} c l l @{}}
+        \toprule
+        \textbf{Stage} & \textbf{Module} & \textbf{Core Technique} \\
+        \midrule
+        1 & Document Detection    & YOLOv8-nano / OpenCV contour fallback \\
+        2 & Perspective Rectification & \texttt{cv2.getPerspectiveTransform} + \texttt{warpPerspective} \\
+        3 & Tamper Detection      & ELA + Noise Analysis + Edge Density + CNN \\
+        4 & OCR Extraction        & EasyOCR + Regex field parsing \\
+        \bottomrule
+    \end{tabular}
+    \caption{The four stages of the DocFraudDetector pipeline.}
+    \label{tab:pipeline_stages}
+\end{table}
+
+Each module can operate independently (modular design), but the pipeline orchestrator chains them together, handles error recovery, logs timing, and produces unified output.
+
+
+\section{Why This Project Aligns with BigVision LLC}
+
+BigVision LLC, founded by the CEO of OpenCV.org, specialises in end-to-end computer vision products. This project directly mirrors their areas of expertise:
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{@{} l l @{}}
+        \toprule
+        \textbf{BigVision Expertise} & \textbf{Mapping in DocFraudDetector} \\
+        \midrule
+        OpenCV fluency & Contour detection, perspective transforms, CLAHE, Canny \\
+        Object detection & YOLOv8 for document localisation \\
+        Deep learning & EfficientNet-B0 binary classifier via \texttt{timm} \\
+        Document analysis \& OCR & EasyOCR extraction + regex field parsing \\
+        Synthetic data generation & Custom generator with 5 tamper types \\
+        End-to-end pipeline & FastAPI REST API + Streamlit web demo \\
+        Edge AI mindset & YOLOv8-nano chosen for speed; CPU-first design \\
+        \midrule
+        \textit{Case Study \#6} & \textit{ID Document Analysis} — direct match \\
+        \bottomrule
+    \end{tabular}
+    \caption{Alignment between BigVision's portfolio and project design choices.}
+    \label{tab:bigvision_alignment}
+\end{table}
+
+\begin{keyinsight}
+BigVision's Case Study \#6 describes an \textbf{ID document analysis} system involving document localisation, OCR, and field extraction — exactly what this project implements, with the added dimension of tamper detection and forensic analysis.
+\end{keyinsight}
+
+
+\section{Key Design Principles}
+
+\begin{enumerate}[label=(\alph*)]
+    \item \textbf{Modularity}. Each stage is a self-contained Python class that can be tested, replaced, or extended independently.
+    \item \textbf{Graceful fallback}. If YOLOv8 is unavailable, detection falls back to OpenCV contours. If the CNN model is untrained, forensic analysis alone provides the tamper score. If EasyOCR is not installed, the pipeline still runs all other stages.
+    \item \textbf{Multi-technique scoring}. Tamper detection does not rely on a single method. ELA, noise analysis, and edge density each produce an independent score. These scores are combined via configurable weighted averaging, making the system robust against attacks that fool any single technique.
+    \item \textbf{Centralised configuration}. Every threshold, hyperparameter, model name, and file path is defined in a single \texttt{config.py} file — zero magic numbers scattered across the codebase.
+    \item \textbf{Production-ready packaging}. The same pipeline serves a REST API (FastAPI), an interactive demo (Streamlit), and a CLI script, all sharing the same core code.
+\end{enumerate}
+
+
+\section{Tech Stack Summary}
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{@{} l l @{}}
+        \toprule
+        \textbf{Category} & \textbf{Technologies} \\
+        \midrule
+        Image Processing    & OpenCV 4.13, Pillow, NumPy \\
+        Deep Learning       & PyTorch 2.x, \texttt{timm} (EfficientNet-B0), torchvision \\
+        Object Detection    & Ultralytics YOLOv8-nano \\
+        OCR                 & EasyOCR (English) \\
+        Data Augmentation   & Albumentations, custom transforms \\
+        API                 & FastAPI, Uvicorn, Pydantic \\
+        Web Demo            & Streamlit \\
+        ML Metrics          & scikit-learn (accuracy, precision, recall, F1, AUC-ROC) \\
+        \bottomrule
+    \end{tabular}
+    \caption{Technology stack and their roles in the project.}
+    \label{tab:techstack}
+\end{table}

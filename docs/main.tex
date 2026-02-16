@@ -1,0 +1,182 @@
+% =============================================================================
+% DocFraudDetector — Technical Documentation & Study Guide
+% Author: Pranav Kashyap | IIIT Dharwad
+% =============================================================================
+\documentclass[12pt, a4paper]{report}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage{fontspec}  % LuaLaTeX font handling (supports Unicode em dashes etc.)
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{amsmath, amssymb}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usepackage{float}
+\usepackage{multicol}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ── Colors ───────────────────────────────────────────────────────────────────
+\definecolor{codeblue}{HTML}{1E88E5}
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codegray}{HTML}{666666}
+\definecolor{codegreen}{HTML}{388E3C}
+\definecolor{codered}{HTML}{D32F2F}
+\definecolor{accentpurple}{HTML}{7B1FA2}
+\definecolor{darkteal}{HTML}{00695C}
+
+% ── Hyperref Setup ───────────────────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=codeblue,
+    citecolor=codeblue,
+    urlcolor=accentpurple,
+    bookmarksopen=true,
+    pdfauthor={Pranav Kashyap},
+    pdftitle={DocFraudDetector — Technical Documentation},
+}
+
+% ── Code Listing Style ──────────────────────────────────────────────────────
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{codegreen}\itshape,
+    keywordstyle=\color{codeblue}\bfseries,
+    stringstyle=\color{codered},
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    numbersep=8pt,
+    frame=single,
+    rulecolor=\color{codegray!30},
+    tabsize=4,
+    showstringspaces=false,
+}
+
+\lstdefinestyle{python}{
+    language=Python,
+    morekeywords={self, True, False, None, as, with, yield, async, await},
+}
+
+\lstdefinestyle{json}{
+    basicstyle=\ttfamily\small,
+    string=[s]{"}{"},
+    stringstyle=\color{codegreen},
+    comment=[l]{//},
+    morecomment=[s]{/*}{*/},
+    literate=
+     *{:}{{{\color{codeblue}{:}}}}{1}
+      {,}{{{\color{codeblue}{,}}}}{1}
+}
+
+\lstdefinestyle{bash}{
+    language=bash,
+    keywordstyle=\color{darkteal}\bfseries,
+    morekeywords={python, pip, streamlit, uvicorn, cd},
+}
+
+% ── tcolorbox Environments ──────────────────────────────────────────────────
+\newtcolorbox{keyinsight}{
+    colback=codeblue!5, colframe=codeblue!70!black,
+    fonttitle=\bfseries, title={Key Insight},
+    arc=3pt, boxrule=0.8pt,
+}
+
+\newtcolorbox{interviewtip}{
+    colback=codegreen!5, colframe=codegreen!70!black,
+    fonttitle=\bfseries, title={Interview Tip},
+    arc=3pt, boxrule=0.8pt,
+}
+
+\newtcolorbox{technote}{
+    colback=accentpurple!5, colframe=accentpurple!70!black,
+    fonttitle=\bfseries, title={Technical Note},
+    arc=3pt, boxrule=0.8pt,
+}
+
+\newtcolorbox{warningbox}{
+    colback=codered!5, colframe=codered!70!black,
+    fonttitle=\bfseries, title={Important},
+    arc=3pt, boxrule=0.8pt,
+}
+
+% ── Chapter/Section Styling ─────────────────────────────────────────────────
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{codeblue}}
+  {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{codeblue!80!black}}
+  {\thesection}{1em}{}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{accentpurple}}
+  {\thesubsection}{1em}{}
+
+% ── Header/Footer ───────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{codegray}{\small DocFraudDetector}}
+\fancyhead[R]{\textcolor{codegray}{\small Pranav Kashyap | IIIT Dharwad}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% =============================================================================
+% DOCUMENT
+% =============================================================================
+\begin{document}
+
+% ── Title Page ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    
+    {\Huge\bfseries\color{codeblue} DocFraudDetector}\\[0.5cm]
+    {\Large\color{codegray} AI-Powered Document Fraud \& Tamper Detection System}\\[2cm]
+    
+    \begin{tcolorbox}[
+        colback=codebg, colframe=codeblue,
+        width=0.85\textwidth, arc=5pt,
+        boxrule=1pt,
+    ]
+        \centering\large
+        \textbf{Technical Documentation \& Study Guide}\\[0.3cm]
+        \normalsize
+        End-to-end document fraud detection using deep learning\\
+        combined with classical computer vision forensics.\\[0.3cm]
+        YOLOv8 $\bullet$ EfficientNet-B0 $\bullet$ OpenCV $\bullet$ EasyOCR
+    \end{tcolorbox}
+    
+    \vspace{2cm}
+    
+    {\Large \textbf{Pranav Kashyap}}\\[0.3cm]
+    {\large Indian Institute of Information Technology, Dharwad}\\[0.3cm]
+    {\normalsize BigVision LLC — Internship Project}\\[2cm]
+    
+    {\color{codegray}\today}
+    
+    \vfill
+\end{titlepage}
+
+% ── Table of Contents ───────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ── Input Modules ───────────────────────────────────────────────────────────
+\input{overview}
+\input{architecture}
+\input{codebase_guide}
+\input{results_flow}
+\input{interview_prep}
+
+\end{document}

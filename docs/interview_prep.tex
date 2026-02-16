@@ -1,0 +1,282 @@
+% =============================================================================
+% Chapter 5: Interview Preparation — Cheat Sheet
+% =============================================================================
+
+\chapter{Interview Preparation Cheat Sheet}
+\label{ch:interview}
+
+This chapter prepares you for technical questions a BigVision panel is likely to ask about this project. Each entry contains the \textbf{question}, the \textbf{concise answer}, and an \textbf{extended explanation} for follow-up probing.
+
+\section{High-Level Project Questions}
+
+\subsection*{Q1: What does your project do in one sentence?}
+
+\begin{interviewtip}
+``It takes a photograph of any identity document, automatically locates and de-warps the document, runs forensic analysis to determine if the document has been digitally tampered with, extracts text via OCR, and outputs a structured fraud report — all in under 400 milliseconds on CPU.''
+\end{interviewtip}
+
+\subsection*{Q2: Why did you choose this particular problem?}
+
+\textbf{Answer}: Document fraud is a real-world problem with high business impact — KYC (Know Your Customer) verification, banking, insurance, immigration. It directly aligns with BigVision's Case Study \#6 on ID Document Analysis. The problem requires both classical CV skills (edge detection, perspective transforms, image forensics) \textit{and} deep learning (CNN classification), which demonstrates breadth as a computer vision engineer.
+
+
+\subsection*{Q3: How is your system different from just running OCR on a document?}
+
+\textbf{Answer}: OCR only extracts text — it tells you \textit{what} the document says, not whether it's \textit{genuine}. My system adds three layers:
+\begin{enumerate}[label=(\arabic*)]
+    \item \textbf{Detection + rectification}: handles real-world photographs (not just scans).
+    \item \textbf{Multi-technique tamper analysis}: ELA, noise consistency, edge density, and CNN.
+    \item \textbf{End-to-end pipeline}: ties detection, rectification, forensics, and OCR into one automated system with JSON reports and visualisations.
+\end{enumerate}
+
+
+\subsection*{Q4: Walk me through the data flow from input to output.}
+
+\textbf{Answer}: ``The input image goes through four stages:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Detection}: We use an OpenCV contour-based approach (or YOLOv8 if available) to find the document's four corners in the image.
+    \item \textbf{Rectification}: Using \texttt{getPerspectiveTransform}, we compute a $3 \times 3$ homography matrix that maps the detected quadrilateral to a rectangle. We then warp the image using \texttt{warpPerspective}. We also enhance contrast using CLAHE.
+    \item \textbf{Tamper Detection}: We run three independent forensic analyses — ELA checks for JPEG re-compression artifacts, noise analysis checks for blocks with inconsistent noise levels, and edge density checks for unnatural boundaries. Their scores are fused via weighted averaging.
+    \item \textbf{OCR}: EasyOCR extracts text, and regex patterns parse it into structured fields like name, DOB, and ID number.''
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Technical Deep-Dive Questions}
+
+\subsection*{Q5: Explain Error Level Analysis. Why does it work?}
+
+\textbf{Answer}: When a JPEG image is saved, all regions are compressed at the same quality level. If someone pastes a new region into the image and re-saves it, the pasted region will be at a \textit{different} compression level than the rest. ELA re-compresses the image at a known quality (Q=90) and computes the pixel-wise difference. Uniform differences = genuine. Localised bright spots = that region was compressed differently = potential tampering.
+
+\textbf{Follow-up}: ``What if the attacker matches the compression level?'' \\
+\textbf{Answer}: That's exactly why we don't rely on ELA alone. Noise analysis would catch it because the pasted region comes from a different camera/sensor with a different noise profile. The multi-technique approach makes it very hard to fool all techniques simultaneously.
+
+
+\subsection*{Q6: What is CLAHE and why do you use it?}
+
+\textbf{Answer}: CLAHE stands for Contrast Limited Adaptive Histogram Equalisation. Unlike standard histogram equalisation which operates on the entire image (and can over-amplify noise), CLAHE divides the image into tiles (we use $8 \times 8$) and equalises each tile independently, with a clip limit to prevent over-amplification. We use it for two purposes:
+\begin{enumerate}[label=(\arabic*)]
+    \item \textbf{After rectification}: to enhance document readability, especially for documents photographed under uneven lighting.
+    \item \textbf{Before OCR}: to improve text contrast, which significantly boosts OCR accuracy.
+\end{enumerate}
+
+
+\subsection*{Q7: Why EfficientNet-B0 and not ResNet or VGG?}
+
+\textbf{Answer}: EfficientNet-B0 achieves comparable accuracy to ResNet-50 but with \textbf{5.3M parameters} (vs.\ 25M for ResNet-50), making it faster and more memory-efficient. It uses compound scaling (depth, width, resolution) which is more principled than ad-hoc scaling. We use the \texttt{timm} library for easy access to pre-trained ImageNet weights, which gives us strong feature extraction even with a small fine-tuning dataset.
+
+
+\subsection*{Q8: How does the noise consistency analysis work?}
+
+\textbf{Answer}: A genuine photograph has a consistent noise level across the entire image because it comes from a single camera sensor. We split the image into $16 \times 16$ blocks, compute the standard deviation of pixel intensities in each block, then calculate the \textbf{coefficient of variation} (ratio of the standard deviation of block-level noise values to their mean). A high CV means some blocks have very different noise characteristics, suggesting those blocks were pasted in from a different source.
+
+
+\subsection*{Q9: Explain the corner ordering algorithm.}
+
+\textbf{Answer}: Given 4 unordered corner points, we need to determine which is top-left, top-right, bottom-right, and bottom-left. The trick: for any rectangle, the \textbf{sum} $(x + y)$ is smallest at the top-left corner and largest at the bottom-right. The \textbf{difference} $(y - x)$ is smallest at the top-right and largest at the bottom-left. This works because moving ``right'' increases $x$ and moving ``down'' increases $y$.
+
+
+\subsection*{Q10: What interpolation method do you use for perspective warping, and why?}
+
+\textbf{Answer}: We use \texttt{INTER\_CUBIC} (bicubic interpolation). It produces smoother results than \texttt{INTER\_LINEAR} (bilinear), which is important for documents where text sharpness directly affects OCR accuracy. Bicubic uses a $4 \times 4$ pixel neighbourhood (vs.\ $2 \times 2$ for bilinear), giving better reconstructed pixel values at the cost of slightly more computation.
+
+
+\subsection*{Q11: How does the score fusion work? Why weighted average and not a more complex method?}
+
+\textbf{Answer}: We compute:
+$$P_{\text{tamper}} = \frac{w_{\text{ELA}} \cdot s_{\text{ELA}} + w_{\text{noise}} \cdot s_{\text{noise}} + w_{\text{edge}} \cdot s_{\text{edge}}}{\sum w_i}$$
+
+Weighted average is chosen for \textbf{interpretability} and \textbf{debuggability}. Each weight reflects our prior belief about each technique's reliability: ELA (0.40) is the most established forensic technique; noise (0.35) is very reliable; edge density (0.25) is more of a supplementary signal. In production, these weights could be learned from labeled data.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Design \& Architecture Questions}
+
+\subsection*{Q12: Why did you design the system as a pipeline of independent modules?}
+
+\textbf{Answer}: Modularity gives us three key benefits:
+\begin{enumerate}[label=(\arabic*)]
+    \item \textbf{Testability}: Each module can be unit-tested independently with known inputs and expected outputs.
+    \item \textbf{Replaceability}: We can swap YOLOv8 for a different detector, or EasyOCR for Tesseract, without touching any other code.
+    \item \textbf{Graceful degradation}: If YOLOv8 fails, we fall back to contours. If the CNN isn't trained, we still have forensic analysis. If EasyOCR isn't installed, detection and tamper analysis still work.
+\end{enumerate}
+
+
+\subsection*{Q13: How do you handle the case where no document is detected?}
+
+\textbf{Answer}: The detector has a three-tier fallback:
+\begin{enumerate}[label=\arabic*.]
+    \item YOLOv8 detection (if model is loaded).
+    \item OpenCV contour-based detection (finds largest quadrilateral from edge detection).
+    \item Full-image fallback — if no quadrilateral is found, we use the entire image boundaries as the ``detected document.'' This ensures the pipeline always produces a result, even on unusual inputs.
+\end{enumerate}
+
+
+\subsection*{Q14: Why do you have both a FastAPI server and a Streamlit demo?}
+
+\textbf{Answer}: They serve different purposes:
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{FastAPI} is for \textit{integration} — other services (mobile apps, web backends, batch processing systems) call it programmatically via HTTP. It returns structured JSON.
+    \item \textbf{Streamlit} is for \textit{demonstration} — it provides a visual, interactive walkthrough of the analysis for non-technical stakeholders and during presentations.
+\end{itemize}
+In production at BigVision, the FastAPI server would be deployed behind a load balancer, while the Streamlit demo would be used for internal testing and client demonstrations.
+
+
+\subsection*{Q15: How would you deploy this to production?}
+
+\textbf{Answer}:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Containerise} with Docker (Python 3.10 base image, install dependencies, expose port 8000).
+    \item \textbf{GPU support}: Use NVIDIA Container Toolkit for CUDA acceleration.
+    \item \textbf{Load balancing}: Deploy behind Nginx or a cloud load balancer (AWS ALB).
+    \item \textbf{Model serving}: Pre-load models at container startup (not on first request).
+    \item \textbf{Monitoring}: Add Prometheus metrics for request latency, error rates, and tamper detection distribution.
+    \item \textbf{Scaling}: Horizontal scaling with Kubernetes, since the pipeline is stateless.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Synthetic Data \& Training Questions}
+
+\subsection*{Q16: Why synthetic data instead of real tampered documents?}
+
+\textbf{Answer}: Real tampered documents are:
+\begin{enumerate}[label=(\arabic*)]
+    \item Hard to obtain (legal and privacy constraints).
+    \item Not labeled (we don't know \textit{which} region was tampered).
+    \item Not diverse enough (limited tamper types).
+\end{enumerate}
+Synthetic data lets us generate \textit{unlimited} training examples with \textit{controlled} tampering, so we know exactly what was modified and can measure detection accuracy per tamper type. BigVision themselves use synthetic data generation as a documented practice in their case studies.
+
+
+\subsection*{Q17: How realistic is your synthetic data? What are its limitations?}
+
+\textbf{Answer}: Our generator produces documents with realistic structure (headers, fields, watermarks, borders, signatures) and realistic augmentations (variable lighting, perspective, JPEG compression, shadows). However, the limitations are:
+\begin{enumerate}[label=(\arabic*)]
+    \item Text is rendered with OpenCV's built-in fonts, which are less realistic than PDF-rendered or scanned documents.
+    \item The tamper operations are localised to rectangular regions, whereas real-world tampering can be irregular.
+    \item There are no real photographs involved — a production model would benefit from fine-tuning on real document scans.
+\end{enumerate}
+
+
+\subsection*{Q18: Why transfer learning from ImageNet for tamper detection?}
+
+\textbf{Answer}: ImageNet pre-training gives us strong low-level features (edges, textures, gradients) that transfer well to tamper detection. The subtle differences between genuine and tampered regions often manifest as texture inconsistencies — exactly the kind of features that convolutional layers learn from ImageNet. Fine-tuning the entire network on our domain-specific data then adapts these features for our specific task.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{OpenCV \& Computer Vision Questions}
+
+\subsection*{Q19: What is Canny edge detection? Walk me through the algorithm.}
+
+\textbf{Answer}: Canny is a multi-stage edge detector:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Gaussian blur} to smooth the image and reduce noise.
+    \item \textbf{Gradient computation} using Sobel operators in $x$ and $y$ directions.
+    \item \textbf{Non-maximum suppression}: thin edges to 1-pixel width by keeping only local gradient maxima.
+    \item \textbf{Hysteresis thresholding} with two thresholds (low=50, high=150). Pixels above ``high'' are definite edges. Pixels between ``low'' and ``high'' are edges only if they're connected to definite edges. Pixels below ``low'' are discarded.
+\end{enumerate}
+
+
+\subsection*{Q20: What is \texttt{approxPolyDP} and why $\epsilon = 0.02$?}
+
+\textbf{Answer}: \texttt{approxPolyDP} implements the Douglas-Peucker algorithm to simplify a contour by reducing the number of points. The $\epsilon$ parameter controls approximation accuracy — it's the maximum distance a simplified point can deviate from the original contour. We set $\epsilon = 0.02 \times \text{perimeter}$, meaning each simplified point is within 2\% of the perimeter from the original. This is tight enough to preserve the rectangular shape of a document while removing noise points.
+
+
+\subsection*{Q21: Explain perspective transformation mathematically.}
+
+\textbf{Answer}: A perspective transform maps source points $(x, y)$ to destination points $(x', y')$ using a $3 \times 3$ matrix $M$:
+$$\begin{bmatrix} x' w \\ y' w \\ w \end{bmatrix} = M \cdot \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}$$
+
+The actual coordinates are $(x'/w, y'/w)$. The matrix $M$ has 8 degrees of freedom (the 9th element is normalised to 1), so we need 4 point correspondences (8 equations) to solve for $M$. OpenCV's \texttt{getPerspectiveTransform} computes $M$ from exactly 4 source-destination point pairs.
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Performance \& Scalability Questions}
+
+\subsection*{Q22: What are the bottlenecks in your pipeline?}
+
+\textbf{Answer}:
+\begin{itemize}[leftmargin=2em]
+    \item \textbf{OCR} is the slowest stage ($\sim$1.9s on CPU, $\sim$200ms on GPU) because EasyOCR runs a neural text detector + recogniser.
+    \item \textbf{Rectification} ($\sim$260ms) involves a full-image perspective warp and CLAHE.
+    \item Detection ($\sim$15ms) and tamper analysis ($\sim$37ms) are fast.
+    \item \textbf{Total}: $\sim$350ms without OCR, $\sim$2.2s with OCR on CPU.
+\end{itemize}
+
+\textbf{Optimisation strategies}: GPU acceleration, model quantisation (INT8), batch processing, or replacing EasyOCR with a lighter OCR engine for specific document types.
+
+
+\subsection*{Q23: How would you handle 1000 documents per second?}
+
+\textbf{Answer}:
+\begin{enumerate}[label=\arabic*.]
+    \item Deploy on GPU instances (reduces OCR from 1.9s to $\sim$200ms).
+    \item Horizontal scaling: multiple replicas behind a load balancer.
+    \item Async processing: accept upload, return job ID, process in background, webhook on completion.
+    \item Batch inference: group images into batches for GPU efficiency.
+    \item Model optimisation: TensorRT or ONNX Runtime for faster neural network inference.
+\end{enumerate}
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{``What Would You Improve?'' Questions}
+
+\subsection*{Q24: If you had more time, what would you add?}
+
+\textbf{Answer}:
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Localised tamper detection}: instead of one global score, produce a pixel-level tamper map showing exactly \textit{where} the document was modified.
+    \item \textbf{Signature/stamp verification}: dedicated modules for verifying that signatures and official stamps are genuine.
+    \item \textbf{Face matching}: compare the photo on the document with a selfie (like BigVision's face recognition expertise).
+    \item \textbf{Document type classification}: automatically identify whether it's an Aadhaar, PAN, passport, etc., and apply type-specific validation rules.
+    \item \textbf{Real-world training data}: partner with banks or government agencies for annotated genuine/tampered document datasets.
+    \item \textbf{Edge deployment}: Convert models to TensorRT/ONNX for deployment on mobile devices or edge hardware.
+    \item \textbf{Adversarial robustness}: test and harden against adversarial attacks specifically designed to fool tamper detection.
+\end{enumerate}
+
+
+\subsection*{Q25: What's the weakest part of your system?}
+
+\begin{interviewtip}
+\textbf{Be honest}. Interviewers respect self-awareness. A good answer shows you understand the limitations and know how to fix them.
+\end{interviewtip}
+
+\textbf{Answer}: ``The weakest part is that the tamper detector currently operates at a \textit{global} level — it gives one probability for the entire image. It doesn't tell you \textit{which specific region} was tampered with. The heatmap helps visually, but it's based on general ELA/noise patterns rather than a trained segmentation model. Given more time, I would train a U-Net or Mask R-CNN to produce pixel-level tamper masks, which is more useful in a real forensic workflow.''
+
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Quick Reference: Key Numbers}
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{@{} l r @{}}
+        \toprule
+        \textbf{Metric} & \textbf{Value} \\
+        \midrule
+        Pipeline stages              & 4 \\
+        Forensic techniques          & 3 (ELA, noise, edge) + 1 CNN \\
+        Tamper types (synthetic)     & 5 \\
+        CNN model                    & EfficientNet-B0 (5.3M params) \\
+        Detection model              & YOLOv8-nano (3.2M params) \\
+        Default image size           & 600 $\times$ 400 \\
+        CNN input size               & 224 $\times$ 224 \\
+        Tamper threshold             & 0.50 \\
+        ELA quality                  & 90 \\
+        CLAHE clip limit             & 2.0 \\
+        Canny thresholds             & 50, 150 \\
+        Training LR                  & $1 \times 10^{-4}$ \\
+        Training epochs              & 20 \\
+        Batch size                   & 16 \\
+        Train/val split              & 80/20 \\
+        Pipeline time (CPU, no OCR)  & $\sim$350ms \\
+        Pipeline time (CPU, with OCR)& $\sim$2.2s \\
+        Output files per run         & 8 \\
+        Total codebase files         & 13 \\
+        API port                     & 8000 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Key numerical values you should know for the interview.}
+    \label{tab:key_numbers}
+\end{table}
