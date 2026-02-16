@@ -280,7 +280,6 @@ DocFraudDetector/
 
 **Pranav Kashyap**  
 IIIT Dharwad  
-Built for BigVision LLC Internship Application
 
 ---
 
